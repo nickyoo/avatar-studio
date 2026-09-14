@@ -24,9 +24,9 @@ const SLOWMO = 0.3;
  * and window band as a bright strip along the top.
  */
 const CAM_DIST = 7.4;
-const CAM_HEIGHT = 3.4;
-const CAM_LOOK_HEIGHT = 1.25;
-const CAM_LOOK_AHEAD = 6.0;
+const CAM_HEIGHT = 4.0;
+const CAM_LOOK_HEIGHT = 1.0;
+const CAM_LOOK_AHEAD = 4.5;
 
 type State = 'title' | 'playing' | 'cleared' | 'dead';
 
@@ -239,7 +239,7 @@ export class Game {
       const cam = this.engine.camera;
       // Just under the ceiling at the back of the room: a full look down the
       // floor without the ceiling slab in the way.
-      cam.position.set(0, 4.6, 21);
+      cam.position.set(0, 5.4, 21);
       cam.lookAt(0, 0.6, -10);
       return;
     }

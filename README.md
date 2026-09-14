@@ -87,7 +87,8 @@ about 17°, because a portrait viewport wants depth, not headroom — the tall
 screen fills with the floor you're about to fight across, and the ceiling and
 glowing window band become a bright strip along the top.
 
-Camera constants live at the top of `game/Game.ts`. They are the first thing to
+Ceiling height is 7.5 for the same reason, and because lob arcs need somewhere
+to go. Camera constants live at the top of `game/Game.ts`. They are the first thing to
 tune with actual thumbs on actual glass.
 
 ---

@@ -6,10 +6,15 @@ import { makeBox } from './physics';
 
 export const ROOM_W = 20;
 export const ROOM_D = 46;
-// Tall enough that the chase camera isn't scraping the ceiling tiles. At 4.0
-// the camera sat inside the drop ceiling and the top half of a portrait screen
-// was nothing but slab.
-export const CEILING = 5.2;
+/**
+ * Deliberately generous.
+ *
+ * Two reasons. A 66-degree FOV looking slightly down will always eat a third
+ * of a portrait frame in ceiling unless there's real headroom above the
+ * camera. And the combat is lob-based — low-power throws arc high, and they
+ * need somewhere to arc to.
+ */
+export const CEILING = 7.5;
 
 /** Window band: everything between the sill and the header. */
 const GLASS_H = CEILING - 2.0;
@@ -99,7 +104,10 @@ export class Floor {
 
     // --- elevator -------------------------------------------------------
     this.group.add(box(metal, gap * 2 + 0.8, CEILING, 0.3, 0, CEILING / 2, -halfD - 0.3));
-    this.group.add(box(ps1Material(p.accent), gap * 2 + 0.8, 0.22, 0.2, 0, 3.5, -halfD + 0.16));
+    // Header above the lift doors, so the opening reads as a door and not a
+    // hole punched in a very tall wall.
+    this.group.add(box(wall, gap * 2 + 0.8, CEILING - 3.2, 0.36, 0, 3.2 + (CEILING - 3.2) / 2, -halfD + 0.1));
+    this.group.add(box(ps1Material(p.accent), gap * 2 + 0.8, 0.22, 0.2, 0, 3.35, -halfD + 0.16));
     for (const side of [-1, 1]) {
       const door = box(ps1Material(0x8d9299), gap, 3.0, 0.16, (side * gap) / 2, 1.5, -halfD + 0.05);
       this.elevatorDoors.push(door);
