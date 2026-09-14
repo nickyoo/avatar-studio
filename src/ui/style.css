@@ -1,0 +1,183 @@
+:root {
+  --ink: #e8e4d6;
+  --dim: #9a9787;
+  --accent: #e0b23a;
+  --bad: #c8402e;
+  --panel: rgba(12, 13, 11, 0.62);
+  --edge: rgba(232, 228, 214, 0.18);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0c0a;
+  color: #e8e4d6;
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Keep the upscale crisp — the whole point is visible pixels. */
+  image-rendering: pixelated;
+}
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.hud-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.floor-block { display: flex; align-items: baseline; gap: 8px; }
+
+.floor-num {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.floor-band {
+  font-size: 10px;
+  opacity: 0.72;
+  letter-spacing: 0.16em;
+}
+
+.wave {
+  font-size: 11px;
+  opacity: 0.8;
+  text-align: right;
+  padding-top: 6px;
+  letter-spacing: 0.14em;
+}
+
+.health {
+  margin-top: 10px;
+  height: 7px;
+  width: 46%;
+  min-width: 130px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+}
+
+.health-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--ink);
+  transform-origin: left center;
+  transition: transform 0.14s linear;
+}
+
+#hud.critical .health-fill {
+  background: var(--bad);
+  animation: pulse 0.5s steps(2, end) infinite;
+}
+
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+.supply {
+  pointer-events: auto;
+  position: absolute;
+  right: 14px;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: 0.1em;
+}
+
+.supply:active { background: rgba(224, 178, 58, 0.25); }
+.supply-name { font-size: 10px; opacity: 0.8; }
+.supply-count { font-size: 20px; font-weight: 700; line-height: 1; }
+
+.toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  opacity: 0;
+  transition: opacity 0.18s;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
+}
+
+.toast.show { opacity: 1; }
+
+.overlay[hidden] {
+  /* Needed because `display: grid` below outranks the UA stylesheet's
+     `[hidden] { display: none }`, so the attribute alone does nothing. */
+  display: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background: rgba(10, 11, 9, 0.84);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.overlay-card h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  letter-spacing: 0.16em;
+}
+
+.overlay-card p {
+  margin: 0 0 22px;
+  font-size: 12px;
+  opacity: 0.72;
+  line-height: 1.7;
+  letter-spacing: 0.1em;
+}
+
+.overlay-card button {
+  pointer-events: auto;
+  padding: 13px 26px;
+  background: var(--accent);
+  color: #171510;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
