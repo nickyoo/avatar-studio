@@ -2,19 +2,25 @@ import { Group, Mesh, MeshBasicMaterial, Vector3 } from 'three';
 import { Engine } from '../core/Engine';
 import { Input } from '../core/Input';
 import { Time } from '../core/Time';
+import { loadSettings, saveSettings, type Settings } from '../core/settings';
 import { Hud } from '../ui/hud';
 import { bandForFloor } from '../render/palette';
 import { SHARED_BOX } from './models';
 import { Floor } from './Floor';
 import { Player, screenToWorld } from './Player';
 import { Enemy, ENEMIES, type EnemyKind } from './Enemy';
-import { AimArc, Projectiles, Sparks } from './Projectiles';
+import { Boss, type BossHooks } from './Boss';
+import { Telegraphs } from './Telegraph';
+import { AimArc, Projectiles, Sparks, type HitTarget } from './Projectiles';
+import { HAZARDS } from './supplies';
 
 /** Draw-call budget: every humanoid is ~11 meshes, and phones are not kind. */
 const MAX_ALIVE = 12;
 const SPAWN_INTERVAL = 0.45;
 const WAVES_PER_FLOOR = 3;
-const SLOWMO = 0.3;
+
+/** Every fifth floor is a review. */
+const BOSS_EVERY = 5;
 
 /**
  * Over-the-shoulder, pitched down about 17 degrees.
@@ -28,6 +34,9 @@ const CAM_HEIGHT = 4.0;
 const CAM_LOOK_HEIGHT = 1.0;
 const CAM_LOOK_AHEAD = 4.5;
 
+/** Seconds for one pass of the attract dolly behind the title screen. */
+const ATTRACT_PERIOD = 34;
+
 type State = 'title' | 'playing' | 'cleared' | 'dead';
 
 interface Pickup {
@@ -36,20 +45,29 @@ interface Pickup {
   spin: number;
 }
 
+export function isBossFloor(n: number) {
+  return n % BOSS_EVERY === 0;
+}
+
 export class Game {
   private readonly engine: Engine;
   private readonly input: Input;
   private readonly time = new Time();
   private readonly hud: Hud;
+  private readonly settings: Settings;
 
   private readonly player = new Player();
   private readonly projectiles = new Projectiles();
+  /** A second pool for things thrown *at* the player. */
+  private readonly hazards = new Projectiles();
   private readonly arc = new AimArc();
   private readonly sparks = new Sparks();
+  private readonly telegraphs = new Telegraphs();
   private readonly pickupGroup = new Group();
 
   private floor!: Floor;
   private enemies: Enemy[] = [];
+  private boss: Boss | null = null;
   private pickups: Pickup[] = [];
 
   private state: State = 'title';
@@ -58,47 +76,110 @@ export class Game {
   private spawnQueue: EnemyKind[] = [];
   private spawnTimer = 0;
   private waveBreak = 0;
+  private bossIntro = 0;
 
   private camYaw = 0;
   private camShake = 0;
   private moveHeldFor = 0;
+  private attractT = 0;
 
   private readonly worldMove = new Vector3();
   private readonly worldAim = new Vector3();
+  private readonly playerTargets: HitTarget[] = [];
 
   /** `?debug=1` parks the camera above the floor to inspect the layout. */
   private readonly debugCam = new URLSearchParams(location.search).has('debug');
 
+  private readonly bossHooks: BossHooks = {
+    spawnAdds: (count, around) => {
+      for (let i = 0; i < count; i++) {
+        if (this.aliveCount() >= MAX_ALIVE) break;
+        const angle = (i / count) * Math.PI * 2 + Math.random();
+        const at = new Vector3(
+          around.x + Math.cos(angle) * 4.5,
+          0,
+          around.z + Math.sin(angle) * 4.5,
+        );
+        this.spawnAt(i % 2 === 0 ? 'intern' : 'drone', at);
+      }
+    },
+    addsRemaining: () => this.aliveCount(),
+    fireMemo: (from, dir) => this.hazards.spawn(from, dir, 1, HAZARDS.memo),
+    telegraph: (at, radius, duration) => this.telegraphs.add(at, radius, duration),
+    detonate: (at, radius, damage) => {
+      this.sparks.burst(new Vector3(at.x, 0.4, at.z), 22, 7);
+      const dx = this.player.position.x - at.x;
+      const dz = this.player.position.z - at.z;
+      if (dx * dx + dz * dz <= radius * radius) this.player.damage(damage);
+    },
+    say: (text, seconds) => this.hud.say(text, seconds),
+    punch: (strength, color) => this.engine.punch(strength, color),
+    sparks: (at, count, speed) => this.sparks.burst(at, count, speed),
+  };
+
   constructor(canvas: HTMLCanvasElement, hudHost: HTMLElement) {
+    this.settings = loadSettings();
     this.engine = new Engine(canvas);
-    this.input = new Input(canvas);
+    this.input = new Input(canvas, this.settings);
     this.hud = new Hud(hudHost);
 
     this.engine.scene.add(this.player.root);
     this.engine.scene.add(this.projectiles.group);
+    this.engine.scene.add(this.hazards.group);
     this.engine.scene.add(this.arc.mesh);
     this.engine.scene.add(this.sparks.points);
+    this.engine.scene.add(this.telegraphs.group);
     this.engine.scene.add(this.pickupGroup);
+
+    this.playerTargets.push(this.player);
+    this.player.onDamaged = () => {
+      this.engine.punch(0.45, 0xc8402e, 5);
+      this.camShake = 0.5;
+      this.hud.setHealth(this.player.health, this.player.maxHealth);
+      if (!this.player.alive) this.die();
+    };
 
     this.hud.onSwap = () => {
       this.player.cycleSlot();
       this.refreshSupplyHud();
     };
+    this.hud.onStart = () => this.start();
     this.hud.onRestart = () => this.start();
+    this.hud.onMenu = () => this.toTitle();
+    this.hud.onSetting = (key, value) => {
+      // The settings object is shared by reference with Input, so handedness
+      // and thumb reach take effect the instant the control moves.
+      (this.settings[key] as Settings[typeof key]) = value;
+      saveSettings(this.settings);
+    };
 
+    this.toTitle();
+  }
+
+  // --- lifecycle --------------------------------------------------------
+
+  private toTitle() {
+    this.state = 'title';
+    this.attractT = 0;
+    this.boss?.root.removeFromParent();
+    this.boss = null;
+    this.floorNumber = 1;
     this.buildFloor(1);
-    this.hud.showOverlay(
-      'UPWARD&nbsp;MOBILITY',
-      'LEFT THUMB — MOVE<br/>RIGHT THUMB — PULL BACK TO AIM, RELEASE TO THROW<br/><br/>TIME SLOWS WHILE YOU WIND UP.<br/>GET TO THE TOP.',
-      'CLOCK IN',
-    );
+    this.player.root.visible = false;
+    this.arc.hide();
+    this.hud.setChromeVisible(false);
+    this.hud.setBoss(null);
+    this.hud.showTitle(this.settings);
   }
 
   private start() {
-    this.hud.hideOverlay();
+    this.hud.hideScreen();
+    this.hud.setChromeVisible(true);
+    this.player.root.visible = true;
     this.floorNumber = 1;
     this.player.health = this.player.maxHealth;
     this.player.alive = true;
+    this.player.invuln = 0;
     this.player.slots.forEach((s) => {
       if (!s.supply.infinite) s.count = 6;
     });
@@ -111,9 +192,14 @@ export class Game {
     this.floor?.dispose();
     for (const e of this.enemies) e.root.removeFromParent();
     this.enemies = [];
+    this.boss?.root.removeFromParent();
+    this.boss = null;
+    this.telegraphs.clear();
+    this.hud.setBoss(null);
 
     const palette = bandForFloor(n);
-    this.floor = new Floor(n, palette);
+    const boss = isBossFloor(n);
+    this.floor = new Floor(n, palette, boss ? 'boardroom' : 'office');
     this.engine.scene.add(this.floor.group);
     this.engine.applyPalette(palette);
     this.floor.setDoors(0);
@@ -126,9 +212,10 @@ export class Game {
 
     this.waveIndex = 0;
     this.spawnQueue = [];
-    this.waveBreak = 1.4;
+    this.waveBreak = boss ? 0 : 1.4;
+    this.bossIntro = boss ? 2.2 : 0;
     this.hud.setFloor(n, palette.name);
-    this.hud.setWave('');
+    this.hud.setWave(boss ? 'PERFORMANCE REVIEW' : '');
     this.refreshSupplyHud();
     this.hud.setHealth(this.player.health, this.player.maxHealth);
   }
@@ -150,6 +237,52 @@ export class Game {
     this.hud.setSupply(this.player.supply.name, this.player.ammo);
   }
 
+  private die() {
+    this.state = 'dead';
+    this.engine.punch(0.85, 0xc8402e, 1.6);
+    this.time.setScale(1);
+    this.arc.hide();
+
+    const isBest = this.floorNumber > this.settings.bestFloor;
+    if (isBest) {
+      this.settings.bestFloor = this.floorNumber;
+      saveSettings(this.settings);
+    }
+    this.hud.showGameOver(this.floorNumber, this.settings, isBest);
+  }
+
+  // --- spawning ---------------------------------------------------------
+
+  private spawnAt(kind: EnemyKind, at: Vector3) {
+    const e = new Enemy(ENEMIES[kind]);
+    e.spawnAt(
+      new Vector3(
+        Math.max(this.floor.minX, Math.min(this.floor.maxX, at.x)),
+        0,
+        Math.max(this.floor.minZ, Math.min(this.floor.maxZ, at.z)),
+      ),
+    );
+    this.engine.scene.add(e.root);
+    this.enemies.push(e);
+    this.sparks.burst(new Vector3(e.position.x, 0.6, e.position.z), 6, 3);
+  }
+
+  private spawnOne(kind: EnemyKind) {
+    // Spawn out of the player's immediate space so nothing lands in their lap.
+    const candidates = this.floor.spawnPoints
+      .map((p) => ({ p, d: p.distanceTo(this.player.position) }))
+      .filter((c) => c.d > 9)
+      .sort((a, b) => a.d - b.d);
+    const pick = candidates.length
+      ? candidates[Math.floor(Math.random() * Math.min(5, candidates.length))].p
+      : this.floor.spawnPoints[0];
+    this.spawnAt(kind, new Vector3(pick.x + (Math.random() - 0.5) * 3, 0, pick.z + (Math.random() - 0.5) * 3));
+  }
+
+  private aliveCount() {
+    return this.enemies.reduce((n, e) => n + (e.alive ? 1 : 0), 0);
+  }
+
   private queueWave() {
     const scale = 1 + (this.floorNumber - 1) * 0.18;
     const drones = Math.max(1, Math.round((3 + this.waveIndex) * scale));
@@ -166,31 +299,36 @@ export class Game {
     this.hud.setWave(`WAVE ${this.waveIndex + 1} / ${WAVES_PER_FLOOR}`);
   }
 
-  private spawnOne(kind: EnemyKind) {
-    // Spawn out of the player's immediate space so nothing lands in their lap.
-    const candidates = this.floor.spawnPoints
-      .map((p) => ({ p, d: p.distanceTo(this.player.position) }))
-      .filter((c) => c.d > 9)
-      .sort((a, b) => a.d - b.d);
-    const pick = candidates.length
-      ? candidates[Math.floor(Math.random() * Math.min(5, candidates.length))].p
-      : this.floor.spawnPoints[0];
-
-    const e = new Enemy(ENEMIES[kind]);
-    e.spawnAt(
-      new Vector3(pick.x + (Math.random() - 0.5) * 3, 0, pick.z + (Math.random() - 0.5) * 3),
-    );
-    this.engine.scene.add(e.root);
-    this.enemies.push(e);
-    this.sparks.burst(new Vector3(e.position.x, 0.6, e.position.z), 6, 3);
-  }
-
-  private aliveCount() {
-    return this.enemies.reduce((n, e) => n + (e.alive ? 1 : 0), 0);
+  private clearFloor(message: string) {
+    this.state = 'cleared';
+    this.hud.setWave('FLOOR CLEARED');
+    this.hud.say(message, 2.4);
+    this.engine.punch(0.3, 0xffffff, 3);
   }
 
   private updateWaves(dt: number) {
     if (this.state !== 'playing') return;
+
+    if (isBossFloor(this.floorNumber)) {
+      if (this.bossIntro > 0) {
+        this.bossIntro -= dt;
+        if (this.bossIntro <= 0) {
+          this.boss = new Boss(this.floorNumber);
+          this.boss.spawnAt(new Vector3(0, 0, -this.floor.maxZ * 0.55));
+          this.engine.scene.add(this.boss.root);
+          this.hud.say('THE QUICK SYNC', 2.6);
+          this.engine.punch(0.4, 0xffffff, 2.5);
+        }
+        return;
+      }
+      if (this.boss && !this.boss.alive && this.boss.removable) {
+        this.boss.root.removeFromParent();
+        this.boss = null;
+        this.hud.setBoss(null);
+        this.clearFloor('THE MEETING IS OVER');
+      }
+      return;
+    }
 
     if (this.waveBreak > 0) {
       this.waveBreak -= dt;
@@ -211,15 +349,14 @@ export class Game {
 
     this.waveIndex++;
     if (this.waveIndex >= WAVES_PER_FLOOR) {
-      this.state = 'cleared';
-      this.hud.setWave('FLOOR CLEARED');
-      this.hud.say('ELEVATOR UNLOCKED', 2.4);
-      this.engine.punch(0.3, 0xffffff, 3);
+      this.clearFloor('ELEVATOR UNLOCKED');
     } else {
       this.waveBreak = 2.2;
       this.hud.say(`WAVE ${this.waveIndex + 1}`, 1.2);
     }
   }
+
+  // --- per-frame --------------------------------------------------------
 
   private handleThrow() {
     const s = this.input.state;
@@ -234,11 +371,21 @@ export class Game {
     this.camShake = Math.max(this.camShake, 0.12 + supply.impact * 0.3);
   }
 
+  private updateAttract(rawDt: number) {
+    this.attractT += rawDt;
+    const t = (this.attractT % ATTRACT_PERIOD) / ATTRACT_PERIOD;
+    // A slow glide up the floor toward the lift, with a touch of drift so it
+    // never reads as a still image.
+    const z = this.floor.maxZ - t * (this.floor.maxZ - this.floor.minZ);
+    const x = Math.sin(this.attractT * 0.21) * 2.2;
+    const cam = this.engine.camera;
+    cam.position.set(x, 2.7 + Math.sin(this.attractT * 0.13) * 0.25, z);
+    cam.lookAt(x * 0.4, 1.7, z - 9);
+  }
+
   private updateCamera(rawDt: number) {
     if (this.debugCam) {
       const cam = this.engine.camera;
-      // Just under the ceiling at the back of the room: a full look down the
-      // floor without the ceiling slab in the way.
       cam.position.set(0, 5.4, 21);
       cam.lookAt(0, 0.6, -10);
       return;
@@ -329,19 +476,11 @@ export class Game {
       this.engine.punch(0.7, 0xffffff, 2.2);
       this.buildFloor(this.floorNumber);
       this.state = 'playing';
-      this.hud.say(`FLOOR ${this.floorNumber}`, 1.6);
+      this.hud.say(
+        isBossFloor(this.floorNumber) ? 'PERFORMANCE REVIEW' : `FLOOR ${this.floorNumber}`,
+        1.8,
+      );
     }
-  }
-
-  private die() {
-    this.state = 'dead';
-    this.engine.punch(0.85, 0xc8402e, 1.6);
-    this.time.setScale(1);
-    this.hud.showOverlay(
-      'PERFORMANCE&nbsp;MANAGED',
-      `YOU REACHED FLOOR ${String(this.floorNumber).padStart(2, '0')}.<br/>YOUR BADGE HAS BEEN DEACTIVATED.`,
-      'REAPPLY',
-    );
   }
 
   private frame = () => {
@@ -355,7 +494,7 @@ export class Game {
     // Winding up a throw dilates time. Using rawDt for the camera below keeps
     // the view responsive while the world crawls, which is what makes the
     // slow-mo read as power rather than lag.
-    this.time.setScale(playing && s.aiming && this.player.alive ? SLOWMO : 1);
+    this.time.setScale(playing && s.aiming && this.player.alive ? this.settings.slowmo : 1);
 
     if (playing) {
       screenToWorld(s.move, this.camYaw, this.worldMove);
@@ -389,16 +528,25 @@ export class Game {
       for (const e of this.enemies) {
         incoming += e.update(dt, this.player.position, this.enemies, this.floor.colliders, this.floor);
       }
-      if (incoming > 0 && this.player.damage(incoming)) {
-        this.engine.punch(0.45, 0xc8402e, 5);
-        this.camShake = 0.5;
-        this.hud.setHealth(this.player.health, this.player.maxHealth);
-        if (!this.player.alive) this.die();
+      if (incoming > 0) this.player.damage(incoming);
+
+      if (this.boss) {
+        this.boss.update(dt, this.player.position, this.bossHooks, this.floor.colliders, this.floor);
+        this.hud.setBoss(
+          this.boss.name,
+          this.boss.hp / this.boss.maxHp,
+          this.boss.shielded && this.boss.alive,
+        );
       }
 
-      this.projectiles.update(dt, this.floor.colliders, this.enemies, (at, supply) => {
+      // One list so a thrown stapler can hit adds and the boss alike.
+      const targets: HitTarget[] = this.boss ? [...this.enemies, this.boss] : this.enemies;
+      this.projectiles.update(dt, this.floor.colliders, targets, (at, supply) => {
         this.sparks.burst(at, supply.impact > 0.2 ? 14 : 6, supply.impact > 0.2 ? 5 : 3);
         if (supply.impact > 0.2) this.camShake = Math.max(this.camShake, 0.2);
+      });
+      this.hazards.update(dt, this.floor.colliders, this.playerTargets, (at) => {
+        this.sparks.burst(at, 5, 2.5);
       });
 
       this.enemies = this.enemies.filter((e) => {
@@ -407,13 +555,15 @@ export class Game {
         return false;
       });
 
+      this.telegraphs.update(dt);
       this.updatePickups(dt);
       this.updateWaves(dt);
       this.checkElevator();
     }
 
     this.sparks.update(dt);
-    this.updateCamera(rawDt);
+    if (this.state === 'title') this.updateAttract(rawDt);
+    else this.updateCamera(rawDt);
     this.hud.update(rawDt);
     this.input.lateUpdate();
     this.engine.render(rawDt);
@@ -428,13 +578,15 @@ export class Game {
       if ((o as { isMesh?: boolean }).isMesh) meshes++;
     });
     return {
+      state: this.state,
+      floor: this.floorNumber,
       meshes,
       colliders: this.floor.colliders.length,
-      floorChildren: this.floor.group.children.length,
+      variant: this.floor.variant,
       pickups: this.pickups.length,
       enemies: this.enemies.length,
+      boss: this.boss ? { hp: this.boss.hp, max: this.boss.maxHp, shielded: this.boss.shielded } : null,
       player: this.player.position.toArray().map((n) => +n.toFixed(1)),
-      camera: this.engine.camera.position.toArray().map((n) => +n.toFixed(1)),
     };
   }
 

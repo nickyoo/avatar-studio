@@ -1,4 +1,5 @@
 import { Vector2 } from 'three';
+import type { Settings } from './settings';
 
 /**
  * Everything the game is allowed to know about the player's hands.
@@ -27,7 +28,6 @@ export interface InputState {
 
 const DEAD_ZONE = 6; // px before a drag counts as intent
 const MOVE_RADIUS = 58; // px of drag for full-speed movement
-const AIM_RADIUS = 130; // px of pull-back for max power
 
 const scratch = new Vector2();
 
@@ -62,7 +62,10 @@ export class Input {
   private keys = new Set<string>();
   private mouseAiming = false;
 
-  constructor(el: HTMLElement) {
+  constructor(
+    el: HTMLElement,
+    private readonly settings: Settings,
+  ) {
     el.addEventListener('pointerdown', this.onDown, { passive: false });
     el.addEventListener('pointermove', this.onMove, { passive: false });
     el.addEventListener('pointerup', this.onUp, { passive: false });
@@ -93,10 +96,12 @@ export class Input {
     };
 
     if (this.isTouch(e)) {
-      // Left half moves, right half throws.
-      const leftHalf = e.clientX < window.innerWidth * 0.5;
-      if (leftHalf && !this.moveStick) this.moveStick = stick;
-      else if (!leftHalf && !this.aimStick) this.aimStick = stick;
+      // One half of the screen throws, the other moves. Which is which is a
+      // setting, because a hardcoded throwing hand locks out left-handers.
+      const onRight = e.clientX >= window.innerWidth * 0.5;
+      const isThrow = this.settings.throwHand === 'right' ? onRight : !onRight;
+      if (isThrow && !this.aimStick) this.aimStick = stick;
+      else if (!isThrow && !this.moveStick) this.moveStick = stick;
     } else {
       // Desktop: mouse aims, WASD moves.
       this.aimStick = stick;
@@ -143,7 +148,7 @@ export class Input {
     if (len <= DEAD_ZONE) return { dir: this.state.aimDir, power: 0, engaged: false };
     return {
       dir: scratch.set(dx / len, dy / len),
-      power: Math.min(1, (len - DEAD_ZONE) / AIM_RADIUS),
+      power: Math.min(1, (len - DEAD_ZONE) / this.settings.pullRadius),
       engaged: true,
     };
   }

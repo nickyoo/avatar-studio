@@ -31,7 +31,10 @@ function mulberry32(seed: number) {
   };
 }
 
+export type FloorVariant = 'office' | 'boardroom';
+
 export class Floor {
+  readonly variant: FloorVariant = 'office';
   readonly group = new Group();
   readonly colliders: Box3[] = [];
   readonly spawnPoints: Vector3[] = [];
@@ -49,8 +52,9 @@ export class Floor {
   private readonly elevatorDoors: Mesh[] = [];
   private doorSlide = 0;
 
-  constructor(floorNumber: number, p: FloorPalette) {
+  constructor(floorNumber: number, p: FloorPalette, variant: FloorVariant = 'office') {
     const rng = mulberry32(floorNumber * 7919 + 13);
+    this.variant = variant;
 
     const carpet = ps1Material(p.carpet);
     const wall = ps1Material(p.wall);
@@ -124,20 +128,25 @@ export class Floor {
       }
     }
 
-    // --- cubicle pods ---------------------------------------------------
-    const podX = [-4.0, 4.0];
-    const podZ = [-13, -5, 3, 11];
-    for (const px of podX) {
-      for (const pz of podZ) {
-        if (pz < -12 && Math.abs(px) < 3) continue; // keep the elevator lane clear
-        this.buildPod(px, pz, rng, { partition, desk, metal, screen, accent: p.accent });
-        this.spawnPoints.push(new Vector3(px, 0, pz));
+    if (variant === 'boardroom') {
+      this.buildBoardroom(p, { desk, metal, partition, screen });
+    } else {
+      // --- cubicle pods -------------------------------------------------
+      const podX = [-4.0, 4.0];
+      const podZ = [-13, -5, 3, 11];
+      for (const px of podX) {
+        for (const pz of podZ) {
+          if (pz < -12 && Math.abs(px) < 3) continue; // keep the elevator lane clear
+          this.buildPod(px, pz, rng, { partition, desk, metal, screen, accent: p.accent });
+          this.spawnPoints.push(new Vector3(px, 0, pz));
+        }
       }
     }
 
     // --- centre aisle furniture ----------------------------------------
     let flip = 1;
-    for (let z = -halfD + 7; z < halfD - 7; z += 6.5) {
+    if (variant === 'boardroom') flip = 0;
+    for (let z = -halfD + 7; flip !== 0 && z < halfD - 7; z += 6.5) {
       const x = flip * 1.7;
       flip *= -1;
       if (rng() > 0.45) {
@@ -153,13 +162,69 @@ export class Floor {
       }
     }
 
-    // A handful of pods get a supply tray — this is where staplers come from.
-    for (let i = 0; i < 4; i++) {
-      const px = podX[Math.floor(rng() * podX.length)];
-      const pz = podZ[Math.floor(rng() * podZ.length)];
-      const pos = new Vector3(px + (rng() - 0.5) * 2, 0.9, pz + (rng() - 0.5) * 2);
-      if (this.supplyPoints.some((s) => s.distanceTo(pos) < 3)) continue;
+    // Supply trays scatter over the same anchors the spawner uses, so both
+    // floor variants get them without either knowing about the other.
+    for (let i = 0; i < 5 && this.spawnPoints.length; i++) {
+      const anchor = this.spawnPoints[Math.floor(rng() * this.spawnPoints.length)];
+      const pos = new Vector3(anchor.x + (rng() - 0.5) * 2.4, 0.9, anchor.z + (rng() - 0.5) * 2.4);
+      pos.x = Math.max(this.minX, Math.min(this.maxX, pos.x));
+      pos.z = Math.max(this.minZ, Math.min(this.maxZ, pos.z));
+      if (this.supplyPoints.some((s) => s.distanceTo(pos) < 4)) continue;
       this.supplyPoints.push(pos);
+    }
+  }
+
+  /**
+   * The boss arena.
+   *
+   * One long table down the middle rather than a maze. It's waist-high, so a
+   * flat throw clips it and a lobbed one clears it — which turns the wind-up
+   * dial into a real decision instead of "always full power".
+   */
+  private buildBoardroom(
+    p: FloorPalette,
+    mats: {
+      desk: ReturnType<typeof ps1Material>;
+      metal: ReturnType<typeof ps1Material>;
+      partition: ReturnType<typeof ps1Material>;
+      screen: MeshBasicMaterial;
+    },
+  ) {
+    const tableZ = -2;
+    const tableLen = 11;
+
+    this.group.add(box(mats.desk, 3.0, 0.12, tableLen, 0, 0.78, tableZ));
+    this.group.add(box(mats.metal, 0.5, 0.74, tableLen - 2.4, 0, 0.38, tableZ));
+    this.colliders.push(makeBox(0, 0.42, tableZ, 3.0, 0.84, tableLen));
+
+    for (let i = 0; i < 6; i++) {
+      const z = tableZ - tableLen / 2 + 1.2 + i * ((tableLen - 2.4) / 5);
+      for (const sx of [-1, 1]) {
+        const x = sx * 2.1;
+        this.group.add(box(mats.partition, 0.55, 0.1, 0.55, x, 0.46, z));
+        this.group.add(box(mats.partition, 0.55, 0.62, 0.12, x + sx * 0.22, 0.78, z));
+        this.colliders.push(makeBox(x, 0.3, z, 0.6, 0.6, 0.6));
+      }
+    }
+
+    // Presentation screen at the head of the table. Nobody is reading it.
+    this.group.add(box(mats.metal, 4.6, 2.6, 0.2, 0, 2.4, -14.5));
+    const slide = new Mesh(new PlaneGeometry(4.2, 2.2), mats.screen);
+    slide.position.set(0, 2.4, -14.36);
+    this.group.add(slide);
+
+    // Credenzas along the flanks: cover, and something to break the silhouette.
+    for (const sx of [-1, 1]) {
+      for (const z of [-9, 4]) {
+        this.group.add(box(mats.desk, 0.9, 1.0, 3.2, sx * 7.4, 0.5, z));
+        this.colliders.push(makeBox(sx * 7.4, 0.5, z, 0.9, 1.0, 3.2));
+      }
+    }
+
+    void p;
+
+    for (const sx of [-1, 1]) {
+      for (const z of [-11, -4, 3, 10]) this.spawnPoints.push(new Vector3(sx * 6.2, 0, z));
     }
   }
 

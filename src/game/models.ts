@@ -125,13 +125,21 @@ export function humanoid(colors: HumanoidColors, scale = 1): Humanoid {
   return { root, torso, head, armL, armR, legL, legR };
 }
 
-/** Drive a humanoid's limbs. `phase` advances with distance travelled. */
-export function walkCycle(h: Humanoid, phase: number, amplitude: number) {
+/**
+ * Drive a humanoid's limbs. `phase` advances with distance travelled.
+ *
+ * Pass `poseArms: false` when the caller is posing the arms itself — an attack
+ * wind-up, a throw follow-through — otherwise the walk cycle overwrites it and
+ * the telegraph silently never plays.
+ */
+export function walkCycle(h: Humanoid, phase: number, amplitude: number, poseArms = true) {
   const s = Math.sin(phase) * amplitude;
   const c = Math.cos(phase) * amplitude;
   h.legL.rotation.x = s;
   h.legR.rotation.x = -s;
-  h.armL.rotation.x = -s * 0.7;
-  h.armR.rotation.x = s * 0.7;
+  if (poseArms) {
+    h.armL.rotation.x = -s * 0.7;
+    h.armR.rotation.x = s * 0.7;
+  }
   h.torso.position.y = 1.12 + Math.abs(c) * 0.04;
 }

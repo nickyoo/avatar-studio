@@ -46,9 +46,25 @@ npm run build
 - `?debug=1` parks the camera at the back of the floor to inspect the layout.
 - `window.game` is exposed in the console; `game.stats()` gives a scene census.
 
-**Controls** — left thumb anywhere on the left half is a floating move stick.
-Right thumb pulls back and releases to throw. Tap the supply chip to swap.
-On desktop: WASD to move, drag the mouse to throw.
+**Controls** — one half of the screen is a floating move stick, the other
+pulls back and releases to throw. Which half is which is a setting. Tap the
+supply chip to swap ordnance. On desktop: WASD to move, drag the mouse to
+throw.
+
+### Settings, and why these three
+
+Settings exist for things that genuinely differ between people holding a
+phone, not as a wall of options:
+
+- **Throwing hand.** A two-thumb game with a hardcoded throwing hand is
+  quietly unplayable for a left-hander. This swaps which half does what.
+- **Thumb reach.** Pixels of pull-back for a full-power throw. Hands are not
+  a standard size, and neither are phones.
+- **Time dilation.** How far the world slows during a wind-up, up to and
+  including off. Some people read slow-motion as power and some read it as lag.
+
+They persist to `localStorage`, guarded — it throws outright in some privacy
+modes, and the game has to be happy with defaults.
 
 ---
 
@@ -147,9 +163,29 @@ long he's been watching), **HR Business Partner** (doesn't attack — documents;
 fills a case file and when it's full you're performed out), **Circle Back**
 (teleports to where it just was), **Chad from Sales**.
 
+### Built
+
+**THE QUICK SYNC** (every 5th floor) — a meeting that could have been an
+email. Every ability is the same joke told mechanically:
+
+- **QUICK SYNC?** books time in your calendar whether you're free or not — a
+  telegraphed AoE under wherever you happen to be standing, which detonates
+  and spawns attendees. Standing still is the mistake.
+- **AGENDA** forwards you a fan of three memos. The middle one punishes
+  standing still, the outer two punish lazy strafing.
+- **LET'S TAKE THIS OFFLINE** (at 70% and 35% health) goes invulnerable behind
+  a ring of attendees you have to clear before anyone can get back to the
+  point. The health bar turns blue rather than just freezing, so it never
+  looks like your hits aren't registering.
+- **CIRCLING BACK** (below 50%) rewinds it to roughly where it stood four
+  seconds ago, invalidating whatever lead you were aiming.
+
+Boss floors swap the cubicle farm for a boardroom. The conference table is
+waist-high on purpose: a flat throw clips it, a lobbed one clears it, which
+turns the wind-up dial into a real decision instead of "always full power".
+
 ### Near-term
 
-- [ ] First boss — The Quick Sync
 - [ ] Ranged enemy ("just a quick question") to pressure the wind-up
 - [ ] Audio: fluorescent hum, keyboard clatter, the stapler *chunk*
 - [ ] Merge static floor geometry — currently ~320 draw calls, which is the
