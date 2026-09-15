@@ -18,5 +18,42 @@
       <div id="hud"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
+
+    <!-- nickg.xyz arcade: back to the menu. Plain DOM so it works identically in
+         every build target here (vanilla, React, Next) with no framework import
+         and no bundler wiring. Not painted during an immersive WebXR session, so
+         the headset cartridges need no special-casing. -->
+    <a id="arcade-back" href="https://nickg.xyz/" aria-label="Back to Nick's Arcade">&#9664;&#8195;ARCADE</a>
+    <style>
+      #arcade-back {
+        position: fixed;
+        top: max(12px, env(safe-area-inset-top, 0px));
+        left: max(12px, env(safe-area-inset-left, 0px));
+        z-index: 2147483000;
+        font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 0.14em;
+        color: #7fe9dc;
+        text-decoration: none;
+        padding: 7px 12px;
+        border: 1px solid rgba(127, 233, 220, 0.34);
+        border-radius: 999px;
+        background: rgba(4, 12, 14, 0.64);
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+        opacity: 0.5;
+        transition: opacity 0.18s ease, border-color 0.18s ease;
+      }
+      #arcade-back:hover,
+      #arcade-back:focus-visible {
+        opacity: 1;
+        border-color: rgba(127, 233, 220, 0.8);
+      }
+      /* Playing fullscreen is the one time you definitely did not mean to leave. */
+      :fullscreen #arcade-back,
+      :-webkit-full-screen #arcade-back {
+        display: none;
+      }
+    </style>
+
   </body>
 </html>
