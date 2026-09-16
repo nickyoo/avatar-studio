@@ -3,6 +3,7 @@
   --dim: #9a9787;
   --accent: #e0b23a;
   --bad: #c8402e;
+  --shield: #7fd8ff;
   --panel: rgba(12, 13, 11, 0.62);
   --edge: rgba(232, 228, 214, 0.18);
 }
@@ -15,7 +16,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: #0b0c0a;
-  color: #e8e4d6;
+  color: var(--ink);
   font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
   -webkit-user-select: none;
   user-select: none;
@@ -24,10 +25,7 @@ html, body {
   touch-action: none;
 }
 
-#app {
-  position: fixed;
-  inset: 0;
-}
+#app { position: fixed; inset: 0; }
 
 #view {
   display: block;
@@ -41,11 +39,27 @@ html, body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
   font-size: 12px;
   letter-spacing: 0.08em;
+}
+
+[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------------- chrome */
+
+.chrome {
+  position: absolute;
+  inset: 0;
+  /* The extra 34px reserves the top-left corner for the nickg.xyz arcade HOME
+     pill, which is fixed-positioned by index.html and would otherwise sit
+     directly on top of the floor number. Shifting the floor block sideways
+     instead fits at 390px but collides at 360px, so the space is reserved
+     vertically where it holds at every width. */
+  padding: calc(max(12px, env(safe-area-inset-top)) + 34px) 14px
+    max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
 }
 
 .hud-top {
@@ -65,11 +79,7 @@ html, body {
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
 }
 
-.floor-band {
-  font-size: 10px;
-  opacity: 0.72;
-  letter-spacing: 0.16em;
-}
+.floor-band { font-size: 10px; opacity: 0.72; letter-spacing: 0.16em; }
 
 .wave {
   font-size: 11px;
@@ -104,6 +114,40 @@ html, body {
 
 @keyframes pulse { 50% { opacity: 0.35; } }
 
+/* ------------------------------------------------------------- boss bar */
+
+.boss { margin-top: 16px; }
+
+.boss-name {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  opacity: 0.85;
+  margin-bottom: 5px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.boss-track {
+  height: 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+}
+
+.boss-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--bad);
+  transform-origin: left center;
+  transition: transform 0.18s linear;
+}
+
+/* Invulnerable phase reads as a different colour, not just a stuck bar —
+   otherwise it looks like your hits aren't registering. */
+.boss.shielded .boss-fill { background: var(--shield); }
+.boss.shielded .boss-name { color: var(--shield); }
+
+/* --------------------------------------------------------- supply button */
+
 .supply {
   pointer-events: auto;
   position: absolute;
@@ -125,59 +169,186 @@ html, body {
 .supply-name { font-size: 10px; opacity: 0.8; }
 .supply-count { font-size: 20px; font-weight: 700; line-height: 1; }
 
+/* ------------------------------------------------------------------ toast */
+
 .toast {
   position: absolute;
   left: 0;
   right: 0;
-  top: 34%;
+  top: 30%;
   text-align: center;
   font-size: 15px;
   letter-spacing: 0.22em;
   opacity: 0;
   transition: opacity 0.18s;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
+  padding: 0 20px;
 }
 
 .toast.show { opacity: 1; }
 
-.overlay[hidden] {
-  /* Needed because `display: grid` below outranks the UA stylesheet's
-     `[hidden] { display: none }`, so the attribute alone does nothing. */
-  display: none;
-}
+/* ---------------------------------------------------------------- screens */
 
-.overlay {
+.screen {
   position: absolute;
   inset: 0;
   pointer-events: auto;
-  background: rgba(10, 11, 9, 0.84);
-  display: grid;
-  place-items: center;
-  text-align: center;
-  padding: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 28px 22px max(34px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  /* A scrim, not a curtain: the game keeps rendering behind the menu. */
+  background: linear-gradient(
+    to bottom,
+    rgba(10, 11, 9, 0.1) 0%,
+    rgba(10, 11, 9, 0.55) 34%,
+    rgba(10, 11, 9, 0.93) 66%
+  );
 }
 
-.overlay-card h1 {
-  margin: 0 0 8px;
-  font-size: 26px;
-  letter-spacing: 0.16em;
+.screen.settings, .screen.over { align-items: center; background: rgba(10, 11, 9, 0.9); }
+
+.card { width: 100%; max-width: 420px; text-align: center; }
+
+.eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  opacity: 0.55;
+  margin-bottom: 14px;
 }
 
-.overlay-card p {
-  margin: 0 0 22px;
+.card h1 {
+  margin: 0 0 18px;
+  font-size: clamp(30px, 11vw, 46px);
+  line-height: 1.02;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.card h2 {
+  margin: 0 0 26px;
+  font-size: 18px;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+}
+
+.card p {
+  margin: 0 0 20px;
   font-size: 12px;
   opacity: 0.72;
-  line-height: 1.7;
+  line-height: 1.8;
   letter-spacing: 0.1em;
 }
 
-.overlay-card button {
+.actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+
+.card button {
   pointer-events: auto;
-  padding: 13px 26px;
+  width: 100%;
+  padding: 15px 22px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.card button.primary {
   background: var(--accent);
   color: #171510;
-  border: 0;
-  font: inherit;
-  font-weight: 700;
+  border-color: var(--accent);
+}
+
+.card button:active { opacity: 0.7; }
+
+.best {
+  margin-top: 18px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  opacity: 0.6;
+}
+
+.best.new { color: var(--accent); opacity: 1; }
+
+.hint {
+  margin-top: 14px;
+  font-size: 9px;
   letter-spacing: 0.16em;
+  opacity: 0.45;
+  line-height: 1.8;
+}
+
+/* --------------------------------------------------------------- settings */
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.row-label { font-size: 10px; letter-spacing: 0.18em; opacity: 0.8; }
+.readout { font-size: 13px; font-weight: 700; color: var(--accent); }
+
+.segmented { display: flex; border: 1px solid var(--edge); }
+
+.segmented button {
+  width: auto;
+  padding: 9px 16px;
+  border: 0;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  background: transparent;
+  color: var(--dim);
+}
+
+.segmented button.on { background: var(--accent); color: #171510; }
+
+.card input[type='range'] {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  margin: 6px 0 0;
+  background: transparent;
+}
+
+.card input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--edge);
+}
+
+.card input[type='range']::-moz-range-track { height: 4px; background: var(--edge); }
+
+.card input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  /* Deliberately oversized: this is a thumb-sized control on a phone. */
+  width: 26px;
+  height: 26px;
+  margin-top: -11px;
+  background: var(--accent);
+  border: 0;
+}
+
+.card input[type='range']::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  background: var(--accent);
+}
+
+.note {
+  font-size: 9px;
+  line-height: 1.8;
+  letter-spacing: 0.1em;
+  opacity: 0.45;
+  text-align: left;
+  margin-top: 8px;
 }

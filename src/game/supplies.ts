@@ -77,3 +77,30 @@ export const STARTING_LOADOUT: Array<{ id: string; count: number }> = [
   { id: 'paperclip', count: Infinity },
   { id: 'stapler', count: 6 },
 ];
+
+/**
+ * Ordnance the building throws back.
+ *
+ * Reuses the Supply shape because a projectile is a projectile — the fields
+ * that don't apply (cooldown, infinite) are simply inert for these.
+ */
+export const HAZARDS: Record<string, Supply> = {
+  memo: {
+    id: 'memo',
+    name: 'MEMO',
+    damage: 11,
+    speedMin: 13,
+    speedMax: 15,
+    liftMin: 2.6,
+    liftMax: 2.6,
+    gravity: 13,
+    radius: 0.3,
+    size: [0.42, 0.06, 0.32],
+    color: 0xf2efe2,
+    knockback: 0,
+    bounces: 0,
+    cooldown: 0,
+    infinite: true,
+    impact: 0.2,
+  },
+};

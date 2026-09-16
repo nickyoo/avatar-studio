@@ -2,6 +2,7 @@ import { Box3, Group, Vector2, Vector3 } from 'three';
 import { humanoid, walkCycle, type Humanoid } from './models';
 import { resolveCircle } from './physics';
 import { SUPPLIES, STARTING_LOADOUT, type Supply } from './supplies';
+import type { HitTarget } from './Projectiles';
 
 const SPEED = 7.2;
 const AIM_SPEED_MULT = 0.45; // you can still shuffle while winding up, barely
@@ -13,7 +14,7 @@ export interface Slot {
   count: number;
 }
 
-export class Player {
+export class Player implements HitTarget {
   readonly root = new Group();
   readonly position = new Vector3();
   readonly velocity = new Vector3();
@@ -25,6 +26,13 @@ export class Player {
   health = 100;
   maxHealth = 100;
   alive = true;
+
+  /** HitTarget: centre of the hurt sphere, measured up from the feet. */
+  readonly hitHeight = 1.0;
+  readonly hitRadius = 0.5;
+
+  /** Fired whenever damage actually lands, so the game can shake the screen. */
+  onDamaged: ((amount: number) => void) | null = null;
 
   /** Facing, in radians. Y-up, 0 = -Z. */
   yaw = 0;
@@ -81,6 +89,12 @@ export class Player {
     if (slot.count <= 0 && !slot.supply.infinite) this.cycleSlot();
   }
 
+  /** HitTarget: incoming projectile. Knockback is ignored — being shoved
+   *  around by a memo would fight the player for control of their own feet. */
+  onHit(damage: number, _knockback: Vector3, _impact: number) {
+    this.damage(damage);
+  }
+
   damage(amount: number) {
     if (!this.alive || this.invuln > 0) return false;
     this.health -= amount;
@@ -89,6 +103,7 @@ export class Player {
       this.health = 0;
       this.alive = false;
     }
+    this.onDamaged?.(amount);
     return true;
   }
 
@@ -127,7 +142,7 @@ export class Player {
       let delta = target - this.yaw;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
-      this.yaw += delta * Math.min(1, (aiming ? 22 : 12) * dt);
+      this.yaw += delta * Math.min(1, (aiming ? 13 : 10) * dt);
     }
 
     this.root.position.copy(this.position);

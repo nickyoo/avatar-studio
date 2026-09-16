@@ -1,4 +1,5 @@
 import { Vector2 } from 'three';
+import type { Settings } from './settings';
 
 /**
  * Everything the game is allowed to know about the player's hands.
@@ -27,7 +28,8 @@ export interface InputState {
 
 const DEAD_ZONE = 6; // px before a drag counts as intent
 const MOVE_RADIUS = 58; // px of drag for full-speed movement
-const AIM_RADIUS = 130; // px of pull-back for max power
+/** Time constant of the aim low-pass filter, in seconds. */
+const AIM_TAU = 0.055;
 
 const scratch = new Vector2();
 
@@ -62,7 +64,22 @@ export class Input {
   private keys = new Set<string>();
   private mouseAiming = false;
 
-  constructor(el: HTMLElement) {
+  /**
+   * Low-passed aim, and the only aim the game ever sees.
+   *
+   * A thumb resting on glass is never still — raw touch coordinates jitter by
+   * a few pixels constantly, which at throwing distance swings the arc around
+   * by a noticeable amount. The release latches these smoothed values too, so
+   * what you were shown is exactly what you throw.
+   */
+  private readonly smoothDir = new Vector2(0, -1);
+  private smoothPower = 0;
+  private wasAiming = false;
+
+  constructor(
+    el: HTMLElement,
+    private readonly settings: Settings,
+  ) {
     el.addEventListener('pointerdown', this.onDown, { passive: false });
     el.addEventListener('pointermove', this.onMove, { passive: false });
     el.addEventListener('pointerup', this.onUp, { passive: false });
@@ -93,10 +110,12 @@ export class Input {
     };
 
     if (this.isTouch(e)) {
-      // Left half moves, right half throws.
-      const leftHalf = e.clientX < window.innerWidth * 0.5;
-      if (leftHalf && !this.moveStick) this.moveStick = stick;
-      else if (!leftHalf && !this.aimStick) this.aimStick = stick;
+      // One half of the screen throws, the other moves. Which is which is a
+      // setting, because a hardcoded throwing hand locks out left-handers.
+      const onRight = e.clientX >= window.innerWidth * 0.5;
+      const isThrow = this.settings.throwHand === 'right' ? onRight : !onRight;
+      if (isThrow && !this.aimStick) this.aimStick = stick;
+      else if (!isThrow && !this.moveStick) this.moveStick = stick;
     } else {
       // Desktop: mouse aims, WASD moves.
       this.aimStick = stick;
@@ -121,17 +140,18 @@ export class Input {
       // Snapshot the wind-up here rather than letting the game read it next
       // frame: by then update() has already cleared it, and every throw would
       // leave the hand at zero power.
-      const aim = this.readStick(this.aimStick);
-      if (aim.power > 0.05) {
+      if (this.wasAiming && this.smoothPower > 0.05) {
         this.state.released = true;
-        this.state.releasePower = aim.power;
-        this.state.releaseDir.copy(aim.dir);
+        this.state.releasePower = this.smoothPower;
+        this.state.releaseDir.copy(this.smoothDir);
       } else {
         // A tap under the dead zone is a stray thumb, not a throw.
         this.state.cancelled = true;
       }
       this.aimStick = null;
       this.mouseAiming = false;
+      this.wasAiming = false;
+      this.smoothPower = 0;
     }
   };
 
@@ -143,13 +163,13 @@ export class Input {
     if (len <= DEAD_ZONE) return { dir: this.state.aimDir, power: 0, engaged: false };
     return {
       dir: scratch.set(dx / len, dy / len),
-      power: Math.min(1, (len - DEAD_ZONE) / AIM_RADIUS),
+      power: Math.min(1, (len - DEAD_ZONE) / this.settings.pullRadius),
       engaged: true,
     };
   }
 
   /** Call once per frame, before gameplay reads `state`. */
-  update() {
+  update(rawDt: number) {
     const s = this.state;
 
     // --- movement -------------------------------------------------------
@@ -175,14 +195,27 @@ export class Input {
     if (this.aimStick) {
       const aim = this.readStick(this.aimStick);
       if (aim.engaged) {
+        if (!this.wasAiming) {
+          // First engaged frame: snap, so the wind-up starts where the thumb
+          // actually is rather than easing in from a stale direction.
+          this.smoothDir.copy(aim.dir);
+          this.smoothPower = aim.power;
+        } else {
+          const k = 1 - Math.exp(-rawDt / AIM_TAU);
+          this.smoothDir.lerp(aim.dir, k);
+          if (this.smoothDir.lengthSq() > 1e-6) this.smoothDir.normalize();
+          this.smoothPower += (aim.power - this.smoothPower) * k;
+        }
+        this.wasAiming = true;
         s.aiming = true;
-        s.aimPower = aim.power;
-        s.aimDir.copy(aim.dir);
+        s.aimPower = this.smoothPower;
+        s.aimDir.copy(this.smoothDir);
       } else if (this.mouseAiming) {
         // Holding the mouse still counts as aiming, at zero power.
         s.aiming = true;
       }
     }
+    if (!s.aiming) this.wasAiming = false;
   }
 
   /** Clear one-frame flags. Call at the very end of the frame. */
