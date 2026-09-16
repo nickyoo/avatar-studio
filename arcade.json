@@ -1,0 +1,13 @@
+{
+  "$schema": "https://nickg.xyz/arcade.schema.json",
+  "slug": "upward",
+  "title": "UPWARD MOBILITY",
+  "tagline": "Throw office supplies up a corporate skyscraper",
+  "section": "PROJECTS",
+  "kind": "game",
+  "stack": "three.js · vertical mobile",
+  "url": "https://nickg.xyz/upward/",
+  "repo": "nickyoo/avatar-studio",
+  "rootDirectory": ".",
+  "vercelProject": "avatar-studio"
+}
