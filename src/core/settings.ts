@@ -13,6 +13,10 @@ export interface Settings {
   pullRadius: number;
   /** Timescale while winding up. 1 disables the slow-motion entirely. */
   slowmo: number;
+  /** How far the camera swings to face a throw. 0 keeps it locked forward. */
+  cameraTurn: number;
+  /** Screen shake amount. 0 disables it. */
+  shake: number;
   /** Highest floor ever reached. */
   bestFloor: number;
 }
@@ -21,12 +25,16 @@ export const DEFAULTS: Settings = {
   throwHand: 'right',
   pullRadius: 130,
   slowmo: 0.3,
+  cameraTurn: 0.65,
+  shake: 0.7,
   bestFloor: 0,
 };
 
 export const LIMITS = {
   pullRadius: { min: 80, max: 200, step: 10 },
   slowmo: { min: 0.15, max: 1, step: 0.05 },
+  cameraTurn: { min: 0, max: 1, step: 0.05 },
+  shake: { min: 0, max: 1, step: 0.05 },
 };
 
 const KEY = 'upward-mobility/settings';
@@ -50,6 +58,14 @@ export function loadSettings(): Settings {
         LIMITS.pullRadius.max,
       ),
       slowmo: clamp(Number(parsed.slowmo) || DEFAULTS.slowmo, LIMITS.slowmo.min, LIMITS.slowmo.max),
+      // `?? ` rather than `||` — 0 is a legitimate value for both of these and
+      // must not fall through to the default.
+      cameraTurn: clamp(
+        parsed.cameraTurn ?? DEFAULTS.cameraTurn,
+        LIMITS.cameraTurn.min,
+        LIMITS.cameraTurn.max,
+      ),
+      shake: clamp(parsed.shake ?? DEFAULTS.shake, LIMITS.shake.min, LIMITS.shake.max),
       bestFloor: Math.max(0, Math.floor(Number(parsed.bestFloor) || 0)),
     };
   } catch {

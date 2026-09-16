@@ -142,7 +142,7 @@ export class Player implements HitTarget {
       let delta = target - this.yaw;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
-      this.yaw += delta * Math.min(1, (aiming ? 22 : 12) * dt);
+      this.yaw += delta * Math.min(1, (aiming ? 13 : 10) * dt);
     }
 
     this.root.position.copy(this.position);

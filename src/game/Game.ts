@@ -34,6 +34,16 @@ const CAM_HEIGHT = 4.0;
 const CAM_LOOK_HEIGHT = 1.0;
 const CAM_LOOK_AHEAD = 4.5;
 
+/** How fast the camera eases toward its resting yaw, in units per second. */
+const CAM_TURN_RATE = 4.5;
+
+/** Shortest signed angle from an arbitrary delta. */
+function wrapAngle(a: number) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
 /** Seconds for one pass of the attract dolly behind the title screen. */
 const ATTRACT_PERIOD = 34;
 
@@ -79,8 +89,17 @@ export class Game {
   private bossIntro = 0;
 
   private camYaw = 0;
+  /**
+   * Where the camera is easing to.
+   *
+   * Stored as an absolute yaw, which is the whole point: the previous version
+   * recomputed the target every frame from the aim stick, and because a
+   * screen-relative aim resolves to `camYaw + thumbAngle`, the target ran away
+   * from the camera exactly as fast as the camera chased it. It never
+   * converged — a motionless thumb spun the camera indefinitely.
+   */
+  private camTargetYaw = 0;
   private camShake = 0;
-  private moveHeldFor = 0;
   private attractT = 0;
 
   private readonly worldMove = new Vector3();
@@ -207,6 +226,7 @@ export class Game {
     this.player.spawnAt(this.floor.playerSpawn);
     this.player.yaw = Math.PI; // start facing up the room, toward the elevator
     this.camYaw = Math.PI;
+    this.camTargetYaw = Math.PI;
 
     this.buildPickups(palette.accent);
 
@@ -369,6 +389,11 @@ export class Game {
     this.player.consume();
     this.refreshSupplyHud();
     this.camShake = Math.max(this.camShake, 0.12 + supply.impact * 0.3);
+
+    // The camera reorients after you commit, never during the wind-up. Held
+    // as an absolute target so it settles instead of chasing itself.
+    const throwYaw = Math.atan2(this.worldAim.x, this.worldAim.z);
+    this.camTargetYaw = this.camYaw + wrapAngle(throwYaw - this.camYaw) * this.settings.cameraTurn;
   }
 
   private updateAttract(rawDt: number) {
@@ -393,34 +418,12 @@ export class Game {
 
     const s = this.input.state;
 
-    let targetYaw = this.camYaw;
-    let rate = 0;
-
-    if (s.aiming) {
-      // The camera points where you're about to throw. This is the only time
-      // it moves quickly, which is what stops camera-relative input from
-      // feeding back on itself and curving your movement.
-      screenToWorld(s.aimDir, this.camYaw, this.worldAim);
-      if (this.worldAim.lengthSq() > 0.01) {
-        targetYaw = Math.atan2(this.worldAim.x, this.worldAim.z);
-        rate = 11;
-      }
-      this.moveHeldFor = 0;
-    } else if (this.worldMove.lengthSq() > 0.04) {
-      this.moveHeldFor += rawDt;
-      if (this.moveHeldFor > 0.55) {
-        targetYaw = Math.atan2(this.worldMove.x, this.worldMove.z);
-        rate = 1.1; // a slow drift home, not a whip
-      }
-    } else {
-      this.moveHeldFor = 0;
-    }
-
-    if (rate > 0) {
-      let delta = targetYaw - this.camYaw;
-      while (delta > Math.PI) delta -= Math.PI * 2;
-      while (delta < -Math.PI) delta += Math.PI * 2;
-      this.camYaw += delta * Math.min(1, rate * rawDt);
+    // Absolutely still during a wind-up. Aiming is the one moment precision
+    // matters, and a frame that rotates under you while you aim is precisely
+    // what "fidgety" means. Movement never turns the camera either — a
+    // camera that chases a camera-relative stick just orbits forever.
+    if (!s.aiming) {
+      this.camYaw += wrapAngle(this.camTargetYaw - this.camYaw) * Math.min(1, CAM_TURN_RATE * rawDt);
     }
 
     const sin = Math.sin(this.camYaw);
@@ -428,13 +431,20 @@ export class Game {
     const p = this.player.position;
 
     this.camShake = Math.max(0, this.camShake - rawDt * 1.6);
-    const shake = this.camShake * this.camShake;
+    // A decaying wobble on fixed frequencies rather than fresh noise every
+    // frame: per-frame Math.random() is white noise, and white noise reads as
+    // jitter, not as impact.
+    const amp = this.camShake * this.camShake * this.settings.shake * 0.6;
+    const t = performance.now() * 0.001;
+    const shakeX = Math.sin(t * 37.1) * amp;
+    const shakeY = Math.sin(t * 28.7 + 1.7) * amp * 0.7;
+    const shakeZ = Math.sin(t * 41.3 + 3.1) * amp;
 
     const cam = this.engine.camera;
     cam.position.set(
-      p.x - sin * CAM_DIST + (Math.random() - 0.5) * shake,
-      CAM_HEIGHT + (Math.random() - 0.5) * shake,
-      p.z - cos * CAM_DIST + (Math.random() - 0.5) * shake,
+      p.x - sin * CAM_DIST + shakeX,
+      CAM_HEIGHT + shakeY,
+      p.z - cos * CAM_DIST + shakeZ,
     );
     // Keep the camera inside the shell so backing into a wall doesn't put the
     // lens in the stairwell.
@@ -487,7 +497,7 @@ export class Game {
     this.time.tick();
     const { dt, rawDt } = this.time;
 
-    this.input.update();
+    this.input.update(rawDt);
     const s = this.input.state;
     const playing = this.state === 'playing' || this.state === 'cleared';
 

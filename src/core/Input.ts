@@ -28,6 +28,8 @@ export interface InputState {
 
 const DEAD_ZONE = 6; // px before a drag counts as intent
 const MOVE_RADIUS = 58; // px of drag for full-speed movement
+/** Time constant of the aim low-pass filter, in seconds. */
+const AIM_TAU = 0.055;
 
 const scratch = new Vector2();
 
@@ -61,6 +63,18 @@ export class Input {
   private aimStick: Stick | null = null;
   private keys = new Set<string>();
   private mouseAiming = false;
+
+  /**
+   * Low-passed aim, and the only aim the game ever sees.
+   *
+   * A thumb resting on glass is never still — raw touch coordinates jitter by
+   * a few pixels constantly, which at throwing distance swings the arc around
+   * by a noticeable amount. The release latches these smoothed values too, so
+   * what you were shown is exactly what you throw.
+   */
+  private readonly smoothDir = new Vector2(0, -1);
+  private smoothPower = 0;
+  private wasAiming = false;
 
   constructor(
     el: HTMLElement,
@@ -126,17 +140,18 @@ export class Input {
       // Snapshot the wind-up here rather than letting the game read it next
       // frame: by then update() has already cleared it, and every throw would
       // leave the hand at zero power.
-      const aim = this.readStick(this.aimStick);
-      if (aim.power > 0.05) {
+      if (this.wasAiming && this.smoothPower > 0.05) {
         this.state.released = true;
-        this.state.releasePower = aim.power;
-        this.state.releaseDir.copy(aim.dir);
+        this.state.releasePower = this.smoothPower;
+        this.state.releaseDir.copy(this.smoothDir);
       } else {
         // A tap under the dead zone is a stray thumb, not a throw.
         this.state.cancelled = true;
       }
       this.aimStick = null;
       this.mouseAiming = false;
+      this.wasAiming = false;
+      this.smoothPower = 0;
     }
   };
 
@@ -154,7 +169,7 @@ export class Input {
   }
 
   /** Call once per frame, before gameplay reads `state`. */
-  update() {
+  update(rawDt: number) {
     const s = this.state;
 
     // --- movement -------------------------------------------------------
@@ -180,14 +195,27 @@ export class Input {
     if (this.aimStick) {
       const aim = this.readStick(this.aimStick);
       if (aim.engaged) {
+        if (!this.wasAiming) {
+          // First engaged frame: snap, so the wind-up starts where the thumb
+          // actually is rather than easing in from a stale direction.
+          this.smoothDir.copy(aim.dir);
+          this.smoothPower = aim.power;
+        } else {
+          const k = 1 - Math.exp(-rawDt / AIM_TAU);
+          this.smoothDir.lerp(aim.dir, k);
+          if (this.smoothDir.lengthSq() > 1e-6) this.smoothDir.normalize();
+          this.smoothPower += (aim.power - this.smoothPower) * k;
+        }
+        this.wasAiming = true;
         s.aiming = true;
-        s.aimPower = aim.power;
-        s.aimDir.copy(aim.dir);
+        s.aimPower = this.smoothPower;
+        s.aimDir.copy(this.smoothDir);
       } else if (this.mouseAiming) {
         // Holding the mouse still counts as aiming, at zero power.
         s.aiming = true;
       }
     }
+    if (!s.aiming) this.wasAiming = false;
   }
 
   /** Clear one-frame flags. Call at the very end of the frame. */

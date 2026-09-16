@@ -110,7 +110,7 @@ export class Hud {
     this.screen.addEventListener('input', (e) => {
       const el = e.target as HTMLInputElement;
       if (el.type !== 'range') return;
-      const key = el.getAttribute('data-key') as 'pullRadius' | 'slowmo';
+      const key = el.getAttribute('data-key') as SliderKey;
       this.onSetting(key, Number(el.value));
       const readout = this.screen.querySelector(`[data-readout="${key}"]`);
       if (readout) readout.textContent = formatSetting(key, Number(el.value));
@@ -220,6 +220,14 @@ export class Hud {
         <div class="note">How much the world slows while you wind up. 100% turns
           it off entirely.</div>
 
+        ${slider('CAMERA TURN', 'cameraTurn', settings.cameraTurn, LIMITS.cameraTurn)}
+        <div class="note">How far the camera swings to face a throw, after you
+          release. It never moves while you're aiming. Set to LOCKED to keep it
+          pointing one way for the whole run.</div>
+
+        ${slider('SCREEN SHAKE', 'shake', settings.shake, LIMITS.shake)}
+        <div class="note">Impact kick on hits and explosions.</div>
+
         <div class="actions">
           <button class="primary" data-action="back">BACK</button>
         </div>
@@ -255,13 +263,18 @@ export class Hud {
   }
 }
 
-function formatSetting(key: 'pullRadius' | 'slowmo', value: number) {
-  return key === 'slowmo' ? `${Math.round(value * 100)}%` : `${Math.round(value)}px`;
+type SliderKey = 'pullRadius' | 'slowmo' | 'cameraTurn' | 'shake';
+
+function formatSetting(key: SliderKey, value: number) {
+  if (key === 'pullRadius') return `${Math.round(value)}px`;
+  if (key === 'cameraTurn' && value === 0) return 'LOCKED';
+  if (key === 'shake' && value === 0) return 'OFF';
+  return `${Math.round(value * 100)}%`;
 }
 
 function slider(
   label: string,
-  key: 'pullRadius' | 'slowmo',
+  key: SliderKey,
   value: number,
   limits: { min: number; max: number; step: number },
 ) {

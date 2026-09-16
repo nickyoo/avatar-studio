@@ -62,6 +62,9 @@ phone, not as a wall of options:
   a standard size, and neither are phones.
 - **Time dilation.** How far the world slows during a wind-up, up to and
   including off. Some people read slow-motion as power and some read it as lag.
+- **Camera turn.** How far the camera swings to face a throw once you release.
+  LOCKED pins it forward for the whole run.
+- **Screen shake.** Impact kick, down to off.
 
 They persist to `localStorage`, guarded — it throws outright in some privacy
 modes, and the game has to be happy with defaults.
@@ -104,7 +107,29 @@ screen fills with the floor you're about to fight across, and the ceiling and
 glowing window band become a bright strip along the top.
 
 Ceiling height is 7.5 for the same reason, and because lob arcs need somewhere
-to go. Camera constants live at the top of `game/Game.ts`. They are the first thing to
+to go. ### The camera model, and the bug that forced it
+
+The camera **never rotates while you are winding up a throw**, and movement
+never rotates it at all. It turns only after you release, easing toward a
+stored absolute yaw.
+
+That shape is not a style choice, it's the fix for a real bug. The camera used
+to chase the aim direction every frame. But a screen-relative aim resolves to
+`camYaw + thumbAngle`, so the target was defined relative to the camera's own
+current yaw — and it ran away from the camera at exactly the rate the camera
+chased it. It never converged. Measured: a completely motionless thumb held
+off-axis spun the camera **702 degrees in three seconds**.
+
+The general lesson is worth keeping: *never derive a camera's target from a
+quantity that is itself derived from the camera.* Movement recentering had the
+same defect in slower form — holding "right" made you orbit forever — which is
+why movement no longer turns the camera either.
+
+Aiming is also low-pass filtered (`AIM_TAU` in `core/Input.ts`) before the game
+ever sees it. A thumb on glass is never still, and the release latches the
+filtered value, so what the arc showed you is exactly what you throw.
+
+Camera constants live at the top of `game/Game.ts`. They are the first thing to
 tune with actual thumbs on actual glass.
 
 ---
