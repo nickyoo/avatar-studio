@@ -50,7 +50,13 @@ html, body {
 .chrome {
   position: absolute;
   inset: 0;
-  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  /* The extra 34px reserves the top-left corner for the nickg.xyz arcade HOME
+     pill, which is fixed-positioned by index.html and would otherwise sit
+     directly on top of the floor number. Shifting the floor block sideways
+     instead fits at 390px but collides at 360px, so the space is reserved
+     vertically where it holds at every width. */
+  padding: calc(max(12px, env(safe-area-inset-top)) + 34px) 14px
+    max(14px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   pointer-events: none;
