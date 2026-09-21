@@ -1,4 +1,4 @@
-import { Group, Mesh, MeshBasicMaterial, Vector3 } from 'three';
+import { Group, Mesh, MeshBasicMaterial, Vector2, Vector3 } from 'three';
 import { Engine } from '../core/Engine';
 import { Input } from '../core/Input';
 import { Time } from '../core/Time';
@@ -36,6 +36,19 @@ const CAM_LOOK_AHEAD = 4.5;
 
 /** How fast the camera eases toward its resting yaw, in units per second. */
 const CAM_TURN_RATE = 4.5;
+
+/** Auto-advance: cruise fraction of the player's top speed. */
+const ADVANCE_CRUISE = 0.82;
+/** Auto-advance: steering rate at full stick, radians per second. */
+const ADVANCE_TURN = 2.8;
+/**
+ * Auto-advance: how hard winding up plants your feet.
+ *
+ * Stacks on top of the player's own aim multiplier, so a wind-up brings you
+ * to very nearly a stop. Throwing should be a decision to stand still, not
+ * something you drift through.
+ */
+const ADVANCE_AIM_PLANT = 0.25;
 
 /** Shortest signed angle from an arbitrary delta. */
 function wrapAngle(a: number) {
@@ -101,6 +114,15 @@ export class Game {
   private camTargetYaw = 0;
   private camShake = 0;
   private attractT = 0;
+
+  /**
+   * Auto-advance heading, in world space.
+   *
+   * Integrated from the raw stick rather than derived from the camera, which
+   * is exactly why the camera is allowed to chase it: the target owes nothing
+   * to camYaw, so it converges instead of running away.
+   */
+  private advanceYaw = Math.PI;
 
   private readonly worldMove = new Vector3();
   private readonly worldAim = new Vector3();
@@ -227,6 +249,7 @@ export class Game {
     this.player.yaw = Math.PI; // start facing up the room, toward the elevator
     this.camYaw = Math.PI;
     this.camTargetYaw = Math.PI;
+    this.advanceYaw = Math.PI;
 
     this.buildPickups(palette.accent);
 
@@ -378,6 +401,39 @@ export class Game {
 
   // --- per-frame --------------------------------------------------------
 
+  /**
+   * Turn the raw stick into a world-space movement vector.
+   *
+   * Classic reads the stick as a direction relative to the camera. Auto-advance
+   * reads it as a vehicle would: X steers, Y is a throttle that only ever
+   * slows you down, and forward is the default state rather than something you
+   * have to keep asking for.
+   */
+  private updateMoveIntent(dt: number, stick: Vector2, aiming: boolean) {
+    if (this.settings.movement === 'classic') {
+      screenToWorld(stick, this.camYaw, this.worldMove);
+      return;
+    }
+
+    // Steering is locked during a wind-up. The body turns to face the throw,
+    // so a heading change would be invisible until you released — and input
+    // you cannot see the result of is input you cannot learn.
+    if (!aiming) this.advanceYaw += stick.x * ADVANCE_TURN * dt;
+
+    const throttle =
+      Math.max(0, Math.min(1.35, 1 - stick.y * 1.6)) *
+      ADVANCE_CRUISE *
+      (aiming ? ADVANCE_AIM_PLANT : 1);
+
+    this.worldMove
+      .set(Math.sin(this.advanceYaw), 0, Math.cos(this.advanceYaw))
+      .multiplyScalar(throttle);
+
+    // Safe to chase continuously: advanceYaw is a world angle, not a
+    // camera-relative one, so this converges.
+    this.camTargetYaw = this.advanceYaw;
+  }
+
   private handleThrow() {
     const s = this.input.state;
     if (!s.released || !this.player.alive) return;
@@ -391,9 +447,12 @@ export class Game {
     this.camShake = Math.max(this.camShake, 0.12 + supply.impact * 0.3);
 
     // The camera reorients after you commit, never during the wind-up. Held
-    // as an absolute target so it settles instead of chasing itself.
-    const throwYaw = Math.atan2(this.worldAim.x, this.worldAim.z);
-    this.camTargetYaw = this.camYaw + wrapAngle(throwYaw - this.camYaw) * this.settings.cameraTurn;
+    // as an absolute target so it settles instead of chasing itself. In
+    // auto-advance it is already following the heading, so leave it alone.
+    if (this.settings.movement === 'classic') {
+      const throwYaw = Math.atan2(this.worldAim.x, this.worldAim.z);
+      this.camTargetYaw = this.camYaw + wrapAngle(throwYaw - this.camYaw) * this.settings.cameraTurn;
+    }
   }
 
   private updateAttract(rawDt: number) {
@@ -507,8 +566,8 @@ export class Game {
     this.time.setScale(playing && s.aiming && this.player.alive ? this.settings.slowmo : 1);
 
     if (playing) {
-      screenToWorld(s.move, this.camYaw, this.worldMove);
       screenToWorld(s.aimDir, this.camYaw, this.worldAim);
+      this.updateMoveIntent(dt, s.move, s.aiming);
 
       this.player.update(
         dt,
@@ -589,6 +648,7 @@ export class Game {
     });
     return {
       state: this.state,
+      movement: this.settings.movement,
       floor: this.floorNumber,
       meshes,
       colliders: this.floor.colliders.length,
