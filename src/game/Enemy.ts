@@ -71,6 +71,8 @@ export class Enemy implements HitTarget {
   alive = true;
   /** Set once the death animation is finished and it's safe to remove. */
   removable = false;
+  /** Game bookkeeping: this death has already been counted. */
+  scored = false;
 
   hitRadius: number;
   hitHeight: number;

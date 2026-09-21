@@ -4,7 +4,7 @@ A vertical-screen mobile dungeon crawler where the dungeon is a corporate
 skyscraper and the dungeon crawl is your career. You start on the open-plan
 floor throwing paperclips. You are trying to reach the top.
 
-Built in three.js, designed from the first commit to port to WebXR.
+Built in three.js. Mobile-first, and no longer pretending otherwise.
 
 ---
 
@@ -12,18 +12,44 @@ Built in three.js, designed from the first commit to port to WebXR.
 
 **The core verb is throwing, not shooting.**
 
-The obvious choice for a vertical mobile shooter is the Archero/Survivor
-formula — drag to move, auto-fire at the nearest enemy when you stop. It is
-proven, it is frictionless, and it ports to *absolutely nothing* in VR, where
-the entire value proposition is that your arms are the input.
+This was originally chosen so the mechanic would port to VR unchanged. That
+constraint has since been dropped — the game is a mobile game — so the honest
+position is that the original justification no longer applies and the verb has
+to stand on its own. It does, comfortably:
 
-Throwing ports for free. Pull back, aim an arc, release. On a phone it's a
-one-thumb slingshot; in a headset it's the single most natural motion a human
-can make. The physics, damage, enemy AI and level logic are all input-agnostic
-— only the layer that produces a direction and a wind-up strength changes.
+The obvious alternative is the Archero/Survivor formula — drag to move,
+auto-fire at the nearest enemy when you stop. It is proven and frictionless,
+and it is also a game where you never make a decision with your hands. Pull
+back, watch the arc, pick your moment, release: that is a decision, made
+several times a second, and it is what the whole loop is built on.
 
 It also fits the fiction. You are not a soldier with a gun. You are a guy in a
 cubicle throwing office supplies. The weakness *is* the joke.
+
+The input layer is still abstracted behind `InputState` — not for a headset
+now, but because it is simply the right seam. It is what made adding a second
+movement scheme a change to one function instead of a change to the game.
+
+## Pace
+
+A floor is a **kill quota, streamed in from ahead of you** — not a set of waves
+you stand and clear.
+
+Waves cost roughly six seconds of dead air per floor: an opening pause, a gap
+between each wave, then waiting on the last straggler to wander over. That is
+survivable on a couch and intolerable in a two-minute session, and it was
+actively broken by auto-advance, which walks you to the lift and leaves you
+jogging at a shut door. The first enemy now reaches you 0.4s into a floor.
+
+Spawning *in front of you* matters more than it sounds. It means pressure
+always arrives from the direction you are already travelling, so advancing is
+the decision that costs something rather than a free ride to the lift.
+
+Kills land with **hit-stop** — the world hard-stops for ~55ms before resuming.
+It is the cheapest game-feel trick there is and it was the main thing VR was
+costing us, since locking the frame is exactly what you must never do in a
+headset. `Time.freeze()` bypasses the slow-mo blend so play resumes crisply
+rather than easing back in.
 
 ### Time dilation on wind-up
 
@@ -65,10 +91,6 @@ input you can't see the result of is input you can't learn.
 
 **STICK** is the original free two-axis stick.
 
-One thing worth knowing if you port this to VR: continuous artificial forward
-motion is among the worst offenders for VR comfort. AUTO is a flat-screen
-scheme. The throwing is what ports; locomotion will need its own answer.
-
 ### Settings, and why these three
 
 Settings exist for things that genuinely differ between people holding a
@@ -107,6 +129,12 @@ ground floors; by the penthouse everything is gold, marble and warm light. A
 player should be able to screenshot any frame and guess roughly how high they
 are without reading the HUD. Bands are defined in `BANDS` and selected by
 `bandForFloor()`.
+
+**Five floors per band**, so each band ends on a boss and a decent run climbs
+through two or three of them. The thresholds were originally 15/40/75 floors,
+which meant a realistic mobile session never left band one and the entire
+colour-as-progress system was invisible in practice — a good idea that shipped
+switched off.
 
 Rendering ~75k pixels a frame instead of 3M is also why this holds framerate on
 a mid-tier Android.
@@ -182,7 +210,8 @@ chunky and the type stays crisp.
 | Throw arcs, damage, cooldowns, ammo | `game/supplies.ts` |
 | Camera distance / height / pitch | `CAM_*` in `game/Game.ts` |
 | Slow-mo strength | `SLOWMO` in `game/Game.ts` |
-| Wave size and ramp | `queueWave()` in `game/Game.ts` |
+| Floor quota and spawn rate | `floorQuota()` / `spawnInterval()` in `game/Game.ts` |
+| Hit-stop duration | `onKill()` in `game/Game.ts` |
 | Enemy stats and telegraph timing | `ENEMIES` in `game/Enemy.ts` |
 | Retro intensity | `VERTEX_GRID` in `render/ps1.ts`, `MAX_INTERNAL_DIM` in `core/Engine.ts`, `uLevels` |
 | Floor colour bands | `BANDS` in `render/palette.ts` |
@@ -240,4 +269,4 @@ turns the wind-up dial into a real decision instead of "always full power".
 - [ ] Audio: fluorescent hum, keyboard clatter, the stapler *chunk*
 - [ ] Merge static floor geometry — currently ~320 draw calls, which is the
       real mobile ceiling before enemy count is
-- [ ] WebXR input adapter behind the existing `InputState` interface
+- [ ] More floor archetypes — server room, break room, executive corridor

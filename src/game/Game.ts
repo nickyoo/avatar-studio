@@ -16,8 +16,28 @@ import { HAZARDS } from './supplies';
 
 /** Draw-call budget: every humanoid is ~11 meshes, and phones are not kind. */
 const MAX_ALIVE = 12;
-const SPAWN_INTERVAL = 0.45;
-const WAVES_PER_FLOOR = 3;
+/**
+ * Pacing.
+ *
+ * A floor is a kill quota, streamed in from ahead of you, not a set of waves
+ * you stand and clear. Waves cost about six seconds of dead air per floor
+ * (an opening pause, a gap between each wave, then waiting on the last
+ * straggler) — which is fine on a couch and intolerable in a two-minute
+ * mobile session, especially when auto-advance has already walked you to the
+ * elevator and left you jogging at a shut door.
+ */
+const SPAWN_INTERVAL_BASE = 0.62;
+const SPAWN_INTERVAL_MIN = 0.24;
+
+/** Kills needed to unlock the lift on floor `n`. */
+function floorQuota(n: number) {
+  return 9 + Math.round(n * 1.3);
+}
+
+/** Enemies arrive closer together the higher you get. */
+function spawnInterval(n: number) {
+  return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_BASE - n * 0.025);
+}
 
 /** Every fifth floor is a review. */
 const BOSS_EVERY = 5;
@@ -95,10 +115,11 @@ export class Game {
 
   private state: State = 'title';
   private floorNumber = 1;
-  private waveIndex = 0;
-  private spawnQueue: EnemyKind[] = [];
+  /** Kills still needed to unlock the lift. */
+  private quota = 0;
+  /** Enemies left to stream in on this floor. */
+  private spawnBudget = 0;
   private spawnTimer = 0;
-  private waveBreak = 0;
   private bossIntro = 0;
 
   private camYaw = 0;
@@ -253,12 +274,13 @@ export class Game {
 
     this.buildPickups(palette.accent);
 
-    this.waveIndex = 0;
-    this.spawnQueue = [];
-    this.waveBreak = boss ? 0 : 1.4;
+    this.quota = boss ? 0 : floorQuota(n);
+    this.spawnBudget = this.quota;
+    // First arrival is quick: a mobile session cannot afford an opening pause.
+    this.spawnTimer = 0.4;
     this.bossIntro = boss ? 2.2 : 0;
     this.hud.setFloor(n, palette.name);
-    this.hud.setWave(boss ? 'PERFORMANCE REVIEW' : '');
+    this.hud.setWave(boss ? 'PERFORMANCE REVIEW' : this.quotaLabel());
     this.refreshSupplyHud();
     this.hud.setHealth(this.player.health, this.player.maxHealth);
   }
@@ -310,36 +332,64 @@ export class Game {
     this.sparks.burst(new Vector3(e.position.x, 0.6, e.position.z), 6, 3);
   }
 
-  private spawnOne(kind: EnemyKind) {
-    // Spawn out of the player's immediate space so nothing lands in their lap.
-    const candidates = this.floor.spawnPoints
-      .map((p) => ({ p, d: p.distanceTo(this.player.position) }))
-      .filter((c) => c.d > 9)
-      .sort((a, b) => a.d - b.d);
-    const pick = candidates.length
-      ? candidates[Math.floor(Math.random() * Math.min(5, candidates.length))].p
-      : this.floor.spawnPoints[0];
+  /** The direction the player is travelling, which is where trouble comes from. */
+  private headingVector(out: Vector3) {
+    const y = this.settings.movement === 'advance' ? this.advanceYaw : this.player.yaw;
+    return out.set(Math.sin(y), 0, Math.cos(y));
+  }
+
+  /**
+   * Stream one enemy in from ahead of the player.
+   *
+   * Spawning in front matters more than it sounds: it means pressure always
+   * comes from the direction you're already moving, so advancing is the
+   * decision that costs something rather than a free ride to the lift.
+   */
+  private spawnAhead() {
+    const heading = this.headingVector(new Vector3());
+    const to = new Vector3();
+
+    const scored = this.floor.spawnPoints.map((p) => {
+      to.subVectors(p, this.player.position).setY(0);
+      const d = to.length();
+      return { p, d, ahead: d > 0.01 ? to.divideScalar(d).dot(heading) : 0 };
+    });
+
+    let pool = scored.filter((c) => c.d > 7 && c.d < 30 && c.ahead > 0.15);
+    if (!pool.length) pool = scored.filter((c) => c.d > 7);
+    if (!pool.length) pool = scored;
+    if (!pool.length) return;
+
+    // Prefer the ones most directly in your path.
+    pool.sort((a, b) => b.ahead - a.ahead);
+    const pick = pool[Math.floor(Math.random() * Math.min(4, pool.length))].p;
+
+    // Interns get commoner as you climb: the pressure turns from slow and
+    // heavy into fast and numerous.
+    const internChance = Math.min(0.55, 0.12 + this.floorNumber * 0.05);
+    const kind: EnemyKind = Math.random() < internChance ? 'intern' : 'drone';
+
     this.spawnAt(kind, new Vector3(pick.x + (Math.random() - 0.5) * 3, 0, pick.z + (Math.random() - 0.5) * 3));
+  }
+
+  private quotaLabel() {
+    return this.quota > 0 ? `${this.quota} TO CLEAR` : 'FLOOR CLEARED';
+  }
+
+  /** One enemy just died. */
+  private onKill(at: Vector3) {
+    if (this.quota > 0) {
+      this.quota--;
+      this.hud.setWave(this.quotaLabel());
+    }
+    // Hit-stop. Short enough to read as weight rather than a stutter.
+    this.time.freeze(0.055);
+    this.engine.punch(0.16, 0xffffff, 8);
+    this.sparks.burst(new Vector3(at.x, 1.0, at.z), 16, 5);
   }
 
   private aliveCount() {
     return this.enemies.reduce((n, e) => n + (e.alive ? 1 : 0), 0);
-  }
-
-  private queueWave() {
-    const scale = 1 + (this.floorNumber - 1) * 0.18;
-    const drones = Math.max(1, Math.round((3 + this.waveIndex) * scale));
-    const interns = Math.round(this.waveIndex * 1.5 * scale);
-
-    this.spawnQueue = [];
-    for (let i = 0; i < drones; i++) this.spawnQueue.push('drone');
-    for (let i = 0; i < interns; i++) this.spawnQueue.push('intern');
-    // Shuffle so the pack arrives mixed rather than in neat blocks.
-    for (let i = this.spawnQueue.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [this.spawnQueue[i], this.spawnQueue[j]] = [this.spawnQueue[j], this.spawnQueue[i]];
-    }
-    this.hud.setWave(`WAVE ${this.waveIndex + 1} / ${WAVES_PER_FLOOR}`);
   }
 
   private clearFloor(message: string) {
@@ -368,35 +418,23 @@ export class Game {
         this.boss.root.removeFromParent();
         this.boss = null;
         this.hud.setBoss(null);
+        this.time.freeze(0.2);
         this.clearFloor('THE MEETING IS OVER');
       }
       return;
     }
 
-    if (this.waveBreak > 0) {
-      this.waveBreak -= dt;
-      if (this.waveBreak <= 0) this.queueWave();
-      return;
-    }
-
-    if (this.spawnQueue.length > 0) {
+    // Stream arrivals continuously; never pause the floor waiting on a wave.
+    if (this.spawnBudget > 0) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0 && this.aliveCount() < MAX_ALIVE) {
-        this.spawnOne(this.spawnQueue.pop()!);
-        this.spawnTimer = SPAWN_INTERVAL;
+        this.spawnAhead();
+        this.spawnBudget--;
+        this.spawnTimer = spawnInterval(this.floorNumber);
       }
-      return;
     }
 
-    if (this.aliveCount() > 0) return;
-
-    this.waveIndex++;
-    if (this.waveIndex >= WAVES_PER_FLOOR) {
-      this.clearFloor('ELEVATOR UNLOCKED');
-    } else {
-      this.waveBreak = 2.2;
-      this.hud.say(`WAVE ${this.waveIndex + 1}`, 1.2);
-    }
+    if (this.quota <= 0) this.clearFloor('ELEVATOR UNLOCKED');
   }
 
   // --- per-frame --------------------------------------------------------
@@ -596,6 +634,10 @@ export class Game {
       let incoming = 0;
       for (const e of this.enemies) {
         incoming += e.update(dt, this.player.position, this.enemies, this.floor.colliders, this.floor);
+        if (!e.alive && !e.scored) {
+          e.scored = true;
+          this.onKill(e.position);
+        }
       }
       if (incoming > 0) this.player.damage(incoming);
 
@@ -650,6 +692,8 @@ export class Game {
       state: this.state,
       movement: this.settings.movement,
       floor: this.floorNumber,
+      quota: this.quota,
+      spawnBudget: this.spawnBudget,
       meshes,
       colliders: this.floor.colliders.length,
       variant: this.floor.variant,
