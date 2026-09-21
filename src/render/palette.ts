@@ -73,11 +73,18 @@ export const BANDS: FloorPalette[] = [
   },
 ];
 
-/** Which band a given floor number belongs to. */
+/**
+ * Which band a given floor number belongs to.
+ *
+ * Five floors per band, so each band ends on a boss and a good mobile run
+ * visibly climbs through two or three of them. The previous thresholds (15,
+ * 40, 75) meant a typical session never left band one and the whole
+ * colour-as-progress idea was invisible in practice.
+ */
 export function bandForFloor(floor: number): FloorPalette {
-  if (floor <= 15) return BANDS[0];
-  if (floor <= 40) return BANDS[1];
-  if (floor <= 75) return BANDS[2];
+  if (floor <= 5) return BANDS[0];
+  if (floor <= 10) return BANDS[1];
+  if (floor <= 15) return BANDS[2];
   return BANDS[3];
 }
 
