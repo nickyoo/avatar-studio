@@ -46,16 +46,36 @@ npm run build
 - `?debug=1` parks the camera at the back of the floor to inspect the layout.
 - `window.game` is exposed in the console; `game.stats()` gives a scene census.
 
-**Controls** — one half of the screen is a floating move stick, the other
-pulls back and releases to throw. Which half is which is a setting. Tap the
-supply chip to swap ordnance. On desktop: WASD to move, drag the mouse to
-throw.
+**Controls** — one half of the screen drives, the other pulls back and
+releases to throw. Which half is which is a setting. Tap the supply chip to
+swap ordnance. On desktop: WASD drives, drag the mouse to throw.
+
+### Two movement schemes
+
+**AUTO** (default) walks you forward on your own. That thumb stops being a
+direction and becomes a steering wheel: X turns, Y is a throttle that only
+ever slows you down. Winding up plants your feet, so throwing is a decision to
+stand still rather than something you drift through.
+
+It's the mechanic the theme was asking for — the ladder moves you along
+whether you like it or not — and it collapses two continuous jobs into one.
+Steering is deliberately **locked during a wind-up**: the body turns to face
+the throw, so a heading change would be invisible until you released, and
+input you can't see the result of is input you can't learn.
+
+**STICK** is the original free two-axis stick.
+
+One thing worth knowing if you port this to VR: continuous artificial forward
+motion is among the worst offenders for VR comfort. AUTO is a flat-screen
+scheme. The throwing is what ports; locomotion will need its own answer.
 
 ### Settings, and why these three
 
 Settings exist for things that genuinely differ between people holding a
 phone, not as a wall of options:
 
+- **Movement.** AUTO advance versus the free STICK. Switchable mid-run,
+  because which one feels better is not decidable from a desk.
 - **Throwing hand.** A two-thumb game with a hardcoded throwing hand is
   quietly unplayable for a left-hander. This swaps which half does what.
 - **Thumb reach.** Pixels of pull-back for a full-power throw. Hands are not
@@ -124,6 +144,11 @@ The general lesson is worth keeping: *never derive a camera's target from a
 quantity that is itself derived from the camera.* Movement recentering had the
 same defect in slower form — holding "right" made you orbit forever — which is
 why movement no longer turns the camera either.
+
+Under AUTO the camera *does* follow your heading continuously, and that is
+safe for the same reason the old version wasn't: the heading is an integrated
+world angle owned by the player, not a quantity derived from `camYaw`. It
+converges. Measured gap between camera and heading after settling: 0.0 deg.
 
 Aiming is also low-pass filtered (`AIM_TAU` in `core/Input.ts`) before the game
 ever sees it. A thumb on glass is never still, and the release latches the

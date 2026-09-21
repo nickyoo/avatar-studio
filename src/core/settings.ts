@@ -6,8 +6,19 @@
  * two-thumb game with a hardcoded throwing hand is quietly unplayable for a
  * left-hander.
  */
+export type MovementScheme = 'classic' | 'advance';
+
 export interface Settings {
-  /** Which half of the screen throws. The other half moves. */
+  /**
+   * How the player moves.
+   *
+   * `classic` is a free two-axis stick. `advance` walks you forward on your
+   * own and turns that thumb into a steering wheel — one continuous job
+   * instead of two, and thematically the whole point: the ladder moves you
+   * along whether you like it or not.
+   */
+  movement: MovementScheme;
+  /** Which half of the screen throws. The other half steers. */
   throwHand: 'right' | 'left';
   /** Pixels of pull-back for a full-power throw. */
   pullRadius: number;
@@ -22,6 +33,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
+  movement: 'advance',
   throwHand: 'right',
   pullRadius: 130,
   slowmo: 0.3,
@@ -51,6 +63,7 @@ export function loadSettings(): Settings {
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
+      movement: parsed.movement === 'classic' ? 'classic' : 'advance',
       throwHand: parsed.throwHand === 'left' ? 'left' : 'right',
       pullRadius: clamp(
         Number(parsed.pullRadius) || DEFAULTS.pullRadius,

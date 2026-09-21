@@ -97,6 +97,10 @@ export class Hud {
         case 'settings':
           this.showSettings(this.lastSettings!);
           break;
+        case 'move-scheme':
+          this.onSetting('movement', action.getAttribute('data-value') as 'classic' | 'advance');
+          this.showSettings(this.lastSettings!);
+          break;
         case 'hand':
           this.onSetting('throwHand', action.getAttribute('data-value') as 'left' | 'right');
           this.showSettings(this.lastSettings!);
@@ -188,8 +192,10 @@ export class Hud {
         </div>
         ${best}
         <div class="hint">
-          ${settings.throwHand === 'right' ? 'LEFT' : 'RIGHT'} THUMB MOVES &middot;
+          ${settings.throwHand === 'right' ? 'LEFT' : 'RIGHT'} THUMB
+          ${settings.movement === 'advance' ? 'STEERS' : 'MOVES'} &middot;
           ${settings.throwHand === 'right' ? 'RIGHT' : 'LEFT'} THUMB PULLS BACK TO THROW
+          ${settings.movement === 'advance' ? '<br/>YOU ADVANCE ON YOUR OWN' : ''}
         </div>
       </div>`;
     this.screen.hidden = false;
@@ -201,6 +207,19 @@ export class Hud {
     this.screen.innerHTML = `
       <div class="card">
         <h2>SETTINGS</h2>
+
+        <div class="row">
+          <div class="row-label">MOVEMENT</div>
+          <div class="segmented">
+            <button data-action="move-scheme" data-value="advance"
+              class="${settings.movement === 'advance' ? 'on' : ''}">AUTO</button>
+            <button data-action="move-scheme" data-value="classic"
+              class="${settings.movement === 'classic' ? 'on' : ''}">STICK</button>
+          </div>
+        </div>
+        <div class="note">AUTO walks you forward on its own — that thumb becomes
+          a steering wheel, and winding up plants your feet. STICK is a free
+          two-axis stick you drive in every direction.</div>
 
         <div class="row">
           <div class="row-label">THROWING HAND</div>
@@ -223,7 +242,8 @@ export class Hud {
         ${slider('CAMERA TURN', 'cameraTurn', settings.cameraTurn, LIMITS.cameraTurn)}
         <div class="note">How far the camera swings to face a throw, after you
           release. It never moves while you're aiming. Set to LOCKED to keep it
-          pointing one way for the whole run.</div>
+          pointing one way for the whole run. Ignored under AUTO movement, where
+          the camera always follows your heading.</div>
 
         ${slider('SCREEN SHAKE', 'shake', settings.shake, LIMITS.shake)}
         <div class="note">Impact kick on hits and explosions.</div>
