@@ -1,0 +1,29 @@
+# The gate, enforced — such as it is.
+#
+# Be honest about what this proves: `npm run build` is `tsc --noEmit && vite
+# build`, so it catches type errors and anything that breaks the bundle. There
+# is no lint step and there are no tests in this repo, so that is the whole of
+# the automated coverage.
+#
+# It does NOT tell you the game is any good. This is a portrait-viewport mobile
+# game whose real requirements are thumb reach, pace and framerate on an actual
+# phone, and none of those are observable from a CI runner. A green tick here
+# means "it compiles", not "it works" — see CLAUDE.md's "Verifying" section.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
